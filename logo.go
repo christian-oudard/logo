@@ -18,20 +18,12 @@ var (
 	blue = "#607bc6"
 	thinLine = "fill:none; stroke:"+gray+"; stroke-width:4000"
 	thickLine = "fill:none; stroke:"+red+"; stroke-width:60000"
+	debug = false;
 )
 
 func main() {
 	c := svg.New(os.Stdout)
 	c.Startview(pxWidth, pxHeight, -4*svgUnits, -4*svgUnits, 8*svgUnits, 8*svgUnits)
-
-	// Grid lines.
-	for i := 0; i < 14; i++ {
-		c.Rotate((float64(i) / 14) * 360)
-		line(c, p(0, 0), p(0, 4))
-		c.Gend()
-	}
-	circle(c, p(0,0), 11/6.0, thinLine)
-	circle(c, p(0,0), 17/6.0, thinLine)
 
 	// The knot crossover points are the self-intersections of the curve
 	// r = (7/3) + sin((7/3) * theta)
@@ -52,18 +44,17 @@ func main() {
 		crossovers[i] = fromPolar(r, theta)
 	}
 
-	// Draw crossovers.
-	// for _, p := range crossovers {
-	// 	dot(c, p, red)
-	// }
-
 	// Draw outer arcs.
 	for i := 0; i < 7; i++ {
-		// Outer arc.
 		inner := crossovers[2*i]
 		outer1 := crossovers[(2*i - 1 + 14) % 14] // left outer
 		outer2 := crossovers[2*i + 1] // right outer
 		arc(c, inner, outer1, outer2)
+		if debug {
+			line(c, inner, outer1)
+			line(c, inner, outer2)
+			circle(c, inner, outer1.Sub(inner).Norm(), thinLine)
+		}
 	}
 
 	var middleCenters [14]r2.Point
@@ -81,6 +72,12 @@ func main() {
 			mid1, mid1.Add(tangent1),
 		)
 		arc(c, center1, outer, inner1)
+		if debug {
+			dot(c, center1)
+			line(c, center1, outer)
+			line(c, center1, inner1)
+			circle(c, center1, outer.Sub(center1).Norm(), thinLine)
+		}
 
 		mid2 := midpoint(inner2, outer)
 		tangent2 := outer.Sub(inner2).Ortho()
@@ -89,6 +86,12 @@ func main() {
 			mid2, mid2.Add(tangent2),
 		)
 		arc(c, center2, outer, inner2)
+		if debug {
+			dot(c, center2)
+			line(c, center2, outer)
+			line(c, center2, inner2)
+			circle(c, center2, outer.Sub(center2).Norm(), thinLine)
+		}
 
 		middleCenters[2*i] = center1
 		middleCenters[2*i + 1] = center2
@@ -107,6 +110,30 @@ func main() {
 		// These lines intersect at the inner arc center.
 		center := intersectLines(middleCenter1, inner1, middleCenter2, inner2)
 		arc(c, center, inner1, inner2)
+		if debug {
+			dot(c, center)
+			line(c, center, inner1)
+			line(c, center, inner2)
+			circle(c, center, center.Sub(inner1).Norm(), thinLine)
+		}
+	}
+
+	// Draw crossovers.
+	if debug {
+		for _, p := range crossovers {
+			dot(c, p)
+		}
+	}
+
+	// Draw grid lines.
+	if debug {
+		for i := 0; i < 14; i++ {
+			c.Rotate((float64(i) / 14) * 360)
+			line(c, p(0, 0), p(0, 4))
+			c.Gend()
+		}
+		circle(c, p(0,0), 11/6.0, thinLine)
+		circle(c, p(0,0), 17/6.0, thinLine)
 	}
 
 	c.End()
@@ -132,9 +159,8 @@ func circle(c *svg.SVG, center r2.Point, radius float64, style string) {
 		c.Circle(toSvg(center.X), toSvg(center.Y), toSvg(radius), style)
 }
 
-func dot(c *svg.SVG, p r2.Point, color string) {
-	s := "fill:none; stroke:"+color+"; stroke-width:8000"
-	circle(c, p, 1/20.0, s)
+func dot(c *svg.SVG, p r2.Point) {
+	circle(c, p, 1/15.0, "fill:"+blue)
 }
 
 func arc(c *svg.SVG, center, a, b r2.Point) {
