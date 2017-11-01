@@ -1,11 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"github.com/golang/geo/r2"
 	"github.com/ajstarks/svgo"
 	"math"
 	"os"
-	// "fmt"
 )
 
 var (
@@ -17,32 +17,8 @@ var (
 	red = "#600b26"
 	blue = "#607bc6"
 	thinLine = "fill:none; stroke:"+gray+"; stroke-width:4000"
-	thickLine = "fill:none; stroke:"+red+"; stroke-width:8000"
+	thickLine = "fill:none; stroke:"+red+"; stroke-width:60000"
 )
-
-func p(x, y float64) r2.Point {
-	return r2.Point{X:x, Y:y}
-}
-
-func toSvg(v float64) int {
-	return int(v * float64(svgUnits))
-}
-
-func circle(c *svg.SVG, center r2.Point, radius float64, style string) {
-		c.Circle(toSvg(center.X), toSvg(center.Y), toSvg(radius), style)
-}
-
-func dot(c *svg.SVG, p r2.Point, color string) {
-	circle(c, p, 1/20.0, "fill:"+color)
-}
-
-func line(c *svg.SVG, a, b r2.Point) {
-		c.Line(toSvg(a.X), toSvg(a.Y), toSvg(b.X), toSvg(b.Y), thinLine)
-}
-
-func fromPolar(r, theta float64) r2.Point {
-	return p(r * math.Cos(theta), r * math.Sin(theta))
-}
 
 func main() {
 	c := svg.New(os.Stdout)
@@ -77,35 +53,117 @@ func main() {
 	}
 
 	// Draw crossovers.
-	for _, p := range crossovers {
-		dot(c, p, red)
-	}
-
-	// // Draw arcs.
-	// for i := 0; i < 7; i++ {
-	// 	// Outer arc.
-	// 	inner1 := crossovers[2*i]
-	// 	outer := crossovers[2*i + 1]
-	// 	radius1 := inner1.Sub(outer)
-	// 	circle(c, inner1, radius1.Norm(), thinLine)
-
-	// 	if i == 0 {
-	// 		// Middle arc.
-	// 		//BROKEN
-	// 		inner2 := crossovers[2*(i+1) % 14]
-	// 		midpoint := outer.Add(inner2).Mul(0.5)
-	// 		dot(c, midpoint, blue)
-	// 		tangent := outer.Sub(inner2).Ortho()
-	// 		dot(c, midpoint.Add(tangent), blue)
-	// 		center2 := intersectLines(inner1, outer, midpoint, midpoint.Add(tangent))
-
-	// 		dot(c, center2, blue)
-	// 		radius2 := inner2.Sub(center2)
-	// 		circle(c, center2, radius2.Norm(), thinLine)
-	// 	}
+	// for _, p := range crossovers {
+	// 	dot(c, p, red)
 	// }
 
+	// Draw outer arcs.
+	for i := 0; i < 7; i++ {
+		// Outer arc.
+		inner := crossovers[2*i]
+		outer1 := crossovers[(2*i - 1 + 14) % 14] // left outer
+		outer2 := crossovers[2*i + 1] // right outer
+		arc(c, inner, outer1, outer2)
+	}
+
+	var middleCenters [14]r2.Point
+
+	// Draw middle arcs.
+	for i := 0; i < 7; i++ {
+		outer := crossovers[2*i + 1]
+		inner1 := crossovers[2*i]
+		inner2 := crossovers[(2*i + 2) % 14]
+
+		mid1 := midpoint(inner1, outer)
+		tangent1 := outer.Sub(inner1).Ortho()
+		center1 := intersectLines(
+			outer, inner2,
+			mid1, mid1.Add(tangent1),
+		)
+		arc(c, center1, outer, inner1)
+
+		mid2 := midpoint(inner2, outer)
+		tangent2 := outer.Sub(inner2).Ortho()
+		center2 := intersectLines(
+			outer, inner1,
+			mid2, mid2.Add(tangent2),
+		)
+		arc(c, center2, outer, inner2)
+
+		middleCenters[2*i] = center1
+		middleCenters[2*i + 1] = center2
+	}
+
+	// Draw inner arcs.
+	for i := 1; i < 14; i += 2 {
+		inner1 := crossovers[(i-1 + 14) % 14]
+		inner2 := crossovers[(i+1 + 14) % 14]
+
+		// Get the middle arc circle centers which are perpendicular to the ends of the
+		// inner arc.
+		middleCenter1 := middleCenters[(i-2 + 14) % 14]
+		middleCenter2 := middleCenters[(i+1 + 14) % 14]
+
+		// These lines intersect at the inner arc center.
+		center := intersectLines(middleCenter1, inner1, middleCenter2, inner2)
+		arc(c, center, inner1, inner2)
+	}
+
 	c.End()
+}
+
+func p(x, y float64) r2.Point {
+	return r2.Point{X:x, Y:y}
+}
+
+func fromPolar(r, theta float64) r2.Point {
+	return p(r * math.Cos(theta), r * math.Sin(theta))
+}
+
+func toSvg(v float64) int {
+	return int(v * float64(svgUnits))
+}
+
+func line(c *svg.SVG, a, b r2.Point) {
+		c.Line(toSvg(a.X), toSvg(a.Y), toSvg(b.X), toSvg(b.Y), thinLine)
+}
+
+func circle(c *svg.SVG, center r2.Point, radius float64, style string) {
+		c.Circle(toSvg(center.X), toSvg(center.Y), toSvg(radius), style)
+}
+
+func dot(c *svg.SVG, p r2.Point, color string) {
+	s := "fill:none; stroke:"+color+"; stroke-width:8000"
+	circle(c, p, 1/20.0, s)
+}
+
+func arc(c *svg.SVG, center, a, b r2.Point) {
+		r := a.Sub(center).Norm()
+
+		var sweep int
+		if ccw(center, a, b) {
+			sweep = 1
+		} else {
+			sweep = 0
+		}
+
+		d := fmt.Sprintf(
+			"M%d,%d A%d,%d 0 0,%d %d,%d",
+			toSvg(a.X), toSvg(a.Y),
+			toSvg(r), toSvg(r),
+			sweep,
+			toSvg(b.X), toSvg(b.Y),
+		)
+		c.Path(d, thickLine)
+}
+
+func ccw(a, b, c r2.Point) bool {
+	det := (b.X - a.X) * (c.Y - a.Y) - (c.X - a.X) * (b.Y - a.Y)
+	return det > 0
+}
+
+func midpoint(a, b r2.Point) r2.Point {
+	return a.Add(b).Mul(0.5)
 }
 
 func intersectLines(p0, p1, q0, q1 r2.Point) r2.Point {
@@ -125,5 +183,5 @@ func intersectLines(p0, p1, q0, q1 r2.Point) r2.Point {
 	// This is the location along line P of the intersection point.
 	vPerp := v.Ortho()
 	s := vPerp.Mul(-1).Dot(w) / vPerp.Dot(u)
-	return w.Add(u.Mul(s))
+	return p0.Add(u.Mul(s))
 }
