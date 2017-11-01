@@ -13,18 +13,17 @@ var (
 	pxWidth = 500
 	pxHeight = 500
 	tau = 2 * math.Pi
+	black = "#000000"
 	gray = "#a59da0"
 	red = "#600b26"
 	blue = "#607bc6"
 	thinLine = "fill:none; stroke:"+gray+"; stroke-width:4000"
-	thickLine = "fill:none; stroke:"+red+"; stroke-width:60000"
-	debug = false;
+	thickLine = "fill:none; stroke:"+black+"; stroke-width:60000"
+	ribbonSize = 0.85
+	debug = false
 )
 
 func main() {
-	c := svg.New(os.Stdout)
-	c.Startview(pxWidth, pxHeight, -4*svgUnits, -4*svgUnits, 8*svgUnits, 8*svgUnits)
-
 	// The knot crossover points are the self-intersections of the curve
 	// r = (7/3) + sin((7/3) * theta)
 	// For even i in i*(tau/14), the intersection is at radius 11/6,
@@ -44,12 +43,15 @@ func main() {
 		crossovers[i] = fromPolar(r, theta)
 	}
 
+	c := svg.New(os.Stdout)
+	c.Startview(pxWidth, pxHeight, -4*svgUnits, -4*svgUnits, 8*svgUnits, 8*svgUnits)
+
 	// Draw outer arcs.
 	for i := 0; i < 7; i++ {
 		inner := crossovers[2*i]
 		outer1 := crossovers[(2*i - 1 + 14) % 14] // left outer
 		outer2 := crossovers[2*i + 1] // right outer
-		arc(c, inner, outer1, outer2)
+		thickArc(c, inner, outer1, outer2)
 		if debug {
 			line(c, inner, outer1)
 			line(c, inner, outer2)
@@ -71,7 +73,7 @@ func main() {
 			outer, inner2,
 			mid1, mid1.Add(tangent1),
 		)
-		arc(c, center1, outer, inner1)
+		thickArc(c, center1, outer, inner1)
 		if debug {
 			dot(c, center1)
 			line(c, center1, outer)
@@ -85,7 +87,7 @@ func main() {
 			outer, inner1,
 			mid2, mid2.Add(tangent2),
 		)
-		arc(c, center2, outer, inner2)
+		thickArc(c, center2, outer, inner2)
 		if debug {
 			dot(c, center2)
 			line(c, center2, outer)
@@ -109,7 +111,7 @@ func main() {
 
 		// These lines intersect at the inner arc center.
 		center := intersectLines(middleCenter1, inner1, middleCenter2, inner2)
-		arc(c, center, inner1, inner2)
+		thickArc(c, center, inner1, inner2)
 		if debug {
 			dot(c, center)
 			line(c, center, inner1)
@@ -163,7 +165,28 @@ func dot(c *svg.SVG, p r2.Point) {
 	circle(c, p, 1/15.0, "fill:"+blue)
 }
 
-func arc(c *svg.SVG, center, a, b r2.Point) {
+func thickArc(c *svg.SVG, center, a, b r2.Point) {
+	// fatLine := fmt.Sprintf(
+	// 	"fill:none; stroke:%s; stroke-width:%d",
+	// 	black, toSvg(ribbonSize),
+	// )
+	// arc(c, center, a, b, fatLine)
+
+	// Draw outlines of arc.
+	r := a.Sub(center).Norm()
+	innerRadius := r - ribbonSize / 2
+	outerRadius := r + ribbonSize / 2
+
+	aInner := center.Add(a.Sub(center).Normalize().Mul(innerRadius))
+	aOuter := center.Add(a.Sub(center).Normalize().Mul(outerRadius))
+	bInner := center.Add(b.Sub(center).Normalize().Mul(innerRadius))
+	bOuter := center.Add(b.Sub(center).Normalize().Mul(outerRadius))
+
+	arc(c, center, aInner, bInner, thickLine)
+	arc(c, center, aOuter, bOuter, thickLine)
+}
+
+func arc(c *svg.SVG, center, a, b r2.Point, style string) {
 		r := a.Sub(center).Norm()
 
 		var sweep int
@@ -180,7 +203,7 @@ func arc(c *svg.SVG, center, a, b r2.Point) {
 			sweep,
 			toSvg(b.X), toSvg(b.Y),
 		)
-		c.Path(d, thickLine)
+		c.Path(d, style)
 }
 
 func ccw(a, b, c r2.Point) bool {
