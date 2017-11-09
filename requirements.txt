@@ -1,0 +1,3 @@
+sympy
+numpy
+git+https://github.com/pygobject/pycairo#egg=pycairo
