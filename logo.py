@@ -1,6 +1,4 @@
 # TODO
-# - record ribbon edge arcs
-# - find intersections between arcs
 # - show overlap by removing arc segments
 
 
@@ -18,19 +16,27 @@ Arc = namedtuple('Arc', ['center', 'radius', 'angle1', 'angle2'])
 
 
 def main():
-    arcs = logo_arcs()
+    crossovers = np.array([ sympy_polar_to_rect(p) for p in calculate_crossovers() ])
+    arcs = logo_arcs(crossovers)
 
     # Create cairo SVG surface.
-    width, height = (500, 500)
+    width, height = (640, 640)
     surface = cairo.SVGSurface('output.svg', width, height)
     cr = cairo.Context(surface)
 
     # Set a view box ranging from -4 to +4 in both axes.
     cr.translate(width/2, height/2)
-    cr.scale(width/8, height/8)
+    cr.scale(width/12, height/12)
     cr.rotate(-tau/4)
 
-    # Draw.
+    # Draw construction lines.
+    cr.set_source_rgb(0.9, 0.9, 0.9)
+    cr.set_line_width(0.008)
+    for arc in arcs:
+        cr.arc(*arc.center, arc.radius, 0, tau)
+        cr.stroke()
+
+    # Draw arcs.
     cr.set_source_rgb(0, 0, 0)
     cr.set_line_width(0.05)
     for arc in arcs:
@@ -42,27 +48,38 @@ def main():
         )
         cr.stroke()
 
+    # Draw arc intersections.
+    for (a, b) in every_pair(arcs):
+        intersections = intersect_arcs(a, b)
+        for p in intersections:
+            dot(cr, p)
+
+    # Draw crossover points.
+    for p in crossovers:
+        dot(cr, p)
+
     surface.finish()
 
 
 def dot(cr, p):
     cr.save()
-    cr.set_source_rgb(0.7, 0, 0)
-    cr.arc(*p, 0.05, 0, tau)
+    cr.set_source_rgb(0.7, 0.7, 0.7)
+    cr.arc(*p, 0.01, 0, tau)
     cr.fill()
     cr.restore()
 
 
-def logo_arcs():
-    crossovers = np.array([ sympy_polar_to_rect(p) for p in calculate_crossovers() ])
-    result = []
+def logo_arcs(crossovers):
+    arcs = []
 
     # Draw outer arcs.
     for i in range(0, 14, 2):
         inner = crossovers[i]
         outer1 = crossovers[(i-1) % 14]
         outer2 = crossovers[(i+1) % 14]
-        result.extend(ribbon_arcs(arc_center_a_b(inner, outer1, outer2)))
+        arcs.extend(
+            ribbon_arcs(
+                arc_center_a_b(inner, outer1, outer2)))
 
     # Draw middle arcs.
     middleCenters = {}
@@ -77,7 +94,9 @@ def logo_arcs():
             outer, inner2,
             mid1, mid1 + tangent1,
         )
-        result.extend(ribbon_arcs(arc_center_a_b(center1, inner1, outer)))
+        arcs.extend(
+            ribbon_arcs(
+                arc_center_a_b(center1, inner1, outer)))
 
         mid2 = midpoint(inner2, outer)
         tangent2 = perp(outer - inner2)
@@ -85,7 +104,9 @@ def logo_arcs():
             outer, inner1,
             mid2, mid2 - tangent2,
         )
-        result.extend(ribbon_arcs(arc_center_a_b(center2, outer, inner2)))
+        arcs.extend(
+            ribbon_arcs(
+                arc_center_a_b(center2, outer, inner2)))
 
         middleCenters[i] = center1
         middleCenters[i + 1] = center2
@@ -102,27 +123,29 @@ def logo_arcs():
 
         # These lines intersect at the inner arc center.
         center = intersect_lines(middleCenter1, inner1, middleCenter2, inner2)
-        result.extend(ribbon_arcs(arc_center_a_b(center, inner2, inner1)))
+        arcs.extend(
+            ribbon_arcs(
+                arc_center_a_b(center, inner2, inner1)))
 
-    return result
+    return arcs
 
 
 def arc_center_a_b(center, a, b):
-    radius = np.linalg.norm(a - center)
-    angle1 = heading_from(center, a)
-    angle2 = heading_from(center, b)
+    radius = mag(a - center)
+    angle1 = heading(a - center)
+    angle2 = heading(b - center)
     return Arc(center, radius, angle1, angle2)
 
 
-def ribbon_arcs(arc, width=0.8):
+def ribbon_arcs(arc, width=0.1):
     return (
         Arc(arc.center, arc.radius + width/2, arc.angle1, arc.angle2),
         Arc(arc.center, arc.radius - width/2, arc.angle1, arc.angle2),
     )
 
 
-def heading_from(a, b):
-    x, y = (b - a)
+def heading(v):
+    x, y = v
     return np.arctan2(y, x)
 
 
@@ -132,6 +155,17 @@ def midpoint(a, b):
 
 def perp(v):
     return np.array([-v[1], v[0]])
+
+
+def mag(x):
+    return np.linalg.norm(x)
+
+
+def normalize(v):
+    length = mag(v)
+    if np.isclose(length, 0):
+       return v
+    return v / length
 
 
 def intersect_lines(a, b, c, d, segment=False):
@@ -171,28 +205,23 @@ def intersect_circles(center1, radius1, center2, radius2):
     if radius2 > radius1:
         return intersect_circles(center2, radius2, center1, radius1)
 
-    transverse = vec.vfrom(center1, center2)
-    dist = vec.mag(transverse)
+    transverse = center2 - center1
+    dist = mag(transverse)
 
     # Check for identical or concentric circles. These will have either
     # no points in common or all points in common, and in either case, we
     # return an empty list.
-    if points_equal(center1, center2):
+    if np.isclose(dist, 0):
         return []
 
     # Check for exterior or interior tangent.
     radius_sum = radius1 + radius2
     radius_difference = abs(radius1 - radius2)
     if (
-        float_equal(dist, radius_sum) or
-        float_equal(dist, radius_difference)
+        np.isclose(dist, radius_sum) or
+        np.isclose(dist, radius_difference)
     ):
-        return [
-            vec.add(
-                center1,
-                vec.norm(transverse, radius1)
-            ),
-        ]
+        return [center1 + normalize(transverse) * radius1]
 
     # Check for non intersecting circles.
     if dist > radius_sum or dist < radius_difference:
@@ -207,26 +236,56 @@ def intersect_circles(center1, radius1, center2, radius2):
     # Find the x-value of the intersection points, which is the same for both
     # points. Then find the chord length "a" between the two intersection
     # points, and use vector math to find the points.
-    dist2 = vec.mag2(transverse)
-    x = (dist2 - radius2**2 + radius1**2) / (2 * dist)
+    x = (dist**2 - radius2**2 + radius1**2) / (2 * dist)
     a = (
         (1 / dist) *
-        sqrt(
+        np.sqrt(
             (-dist + radius1 - radius2) *
             (-dist - radius1 + radius2) *
             (-dist + radius1 + radius2) *
             (dist + radius1 + radius2)
         )
     )
-    chord_middle = vec.add(
-        center1,
-        vec.norm(transverse, x),
-    )
-    perp = vec.perp(transverse)
+    chord_middle = center1 + normalize(transverse) * x
+    p = normalize(perp(transverse)) * (a/2)
     return [
-        vec.add(chord_middle, vec.norm(perp, a / 2)),
-        vec.add(chord_middle, vec.norm(perp, -a / 2)),
+        chord_middle + p,
+        chord_middle - p,
     ]
+
+
+def intersect_arcs(arc1, arc2):
+    points = intersect_circles(arc1.center, arc1.radius, arc2.center, arc2.radius)
+    return points ## STUB, code below is buggy.
+    result = []
+    for p in points:
+        if (
+            is_angle_between(
+                heading(p - arc1.center),
+                arc1.angle1,
+                arc1.angle2,
+            ) and
+            is_angle_between(
+                heading(p - arc2.center),
+                arc2.angle1,
+                arc2.angle2,
+            )
+        ):
+            result.append(p)
+    return result
+
+
+def is_angle_between(theta, lo, hi):
+    # Normalize angles to be positive.
+    while (
+        theta < 0 or
+        lo < 0 or
+        hi < 0
+    ):
+        theta += tau
+        lo += tau
+        hi += tau
+    return lo <= theta <= hi
 
 
 def sympy_polar_to_rect(p):
@@ -234,6 +293,15 @@ def sympy_polar_to_rect(p):
     r, theta = p
     rect = mpmath.rect(float(r), float(theta))
     return np.array([float(rect.real), float(rect.imag)])
+
+
+def every_pair(iterable):
+    enumerated_values = list(enumerate(iterable))
+    for low_index, first_item in enumerated_values:
+        for high_index, second_item in enumerated_values:
+            if high_index <= low_index:
+                continue
+            yield (first_item, second_item)
 
 
 if __name__ == '__main__':
