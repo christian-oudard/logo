@@ -1,3 +1,11 @@
+# TODO
+# - record ribbon edge arcs
+# - find intersections between arcs
+# - show overlap by removing arc segments
+
+
+from collections import namedtuple
+
 import numpy as np
 import mpmath
 import cairo
@@ -6,28 +14,55 @@ from crossovers import calculate_crossovers
 
 tau = 2 * np.pi
 
-def sympy_polar_to_rect(p):
-    """Convert points from symbolic polar to numeric rectangular coordinates."""
-    r, theta = p
-    rect = mpmath.rect(float(r), float(theta))
-    return np.array([float(rect.real), float(rect.imag)])
+Arc = namedtuple('Arc', ['center', 'radius', 'angle1', 'angle2'])
 
-crossovers = np.array([ sympy_polar_to_rect(p) for p in calculate_crossovers() ])
 
-def draw(cr, width, height):
+def main():
+    arcs = logo_arcs()
+
+    # Create cairo SVG surface.
+    width, height = (500, 500)
+    surface = cairo.SVGSurface('output.svg', width, height)
+    cr = cairo.Context(surface)
+
     # Set a view box ranging from -4 to +4 in both axes.
     cr.translate(width/2, height/2)
     cr.scale(width/8, height/8)
     cr.rotate(-tau/4)
+
+    # Draw.
+    cr.set_source_rgb(0, 0, 0)
+    cr.set_line_width(0.05)
+    for arc in arcs:
+        cr.arc(
+            *arc.center,
+            arc.radius,
+            arc.angle1,
+            arc.angle2,
+        )
+        cr.stroke()
+
+    surface.finish()
+
+
+def dot(cr, p):
+    cr.save()
+    cr.set_source_rgb(0.7, 0, 0)
+    cr.arc(*p, 0.05, 0, tau)
+    cr.fill()
+    cr.restore()
+
+
+def logo_arcs():
+    crossovers = np.array([ sympy_polar_to_rect(p) for p in calculate_crossovers() ])
+    result = []
 
     # Draw outer arcs.
     for i in range(0, 14, 2):
         inner = crossovers[i]
         outer1 = crossovers[(i-1) % 14]
         outer2 = crossovers[(i+1) % 14]
-
-        arc_center_a_b(cr, inner, outer1, outer2)
-        cr.stroke()
+        result.extend(ribbon_arcs(arc_center_a_b(inner, outer1, outer2)))
 
     # Draw middle arcs.
     middleCenters = {}
@@ -42,8 +77,7 @@ def draw(cr, width, height):
             outer, inner2,
             mid1, mid1 + tangent1,
         )
-        arc_center_a_b(cr, center1, inner1, outer)
-        cr.stroke()
+        result.extend(ribbon_arcs(arc_center_a_b(center1, inner1, outer)))
 
         mid2 = midpoint(inner2, outer)
         tangent2 = perp(outer - inner2)
@@ -51,8 +85,7 @@ def draw(cr, width, height):
             outer, inner1,
             mid2, mid2 - tangent2,
         )
-        arc_center_a_b(cr, center2, outer, inner2)
-        cr.stroke()
+        result.extend(ribbon_arcs(arc_center_a_b(center2, outer, inner2)))
 
         middleCenters[i] = center1
         middleCenters[i + 1] = center2
@@ -69,46 +102,24 @@ def draw(cr, width, height):
 
         # These lines intersect at the inner arc center.
         center = intersect_lines(middleCenter1, inner1, middleCenter2, inner2)
-        arc_center_a_b(cr, center, inner2, inner1)
-        cr.stroke()
+        result.extend(ribbon_arcs(arc_center_a_b(center, inner2, inner1)))
 
-        # if debug {
-        # 	dot(c, center)
-        # 	line(c, center, inner1)
-        # 	line(c, center, inner2)
-        # 	circle(c, center, center.Sub(inner1).Norm(), thinLine)
-        # }
-
-    # Draw crossovers.
-    # for p in crossovers:
-    #     dot(cr, p)
-
-def dot(cr, p):
-    cr.save()
-    cr.set_source_rgb(0.7, 0, 0)
-    cr.arc(*p, 0.05, 0, tau)
-    cr.fill()
-    cr.restore()
+    return result
 
 
-def arc_center_a_b(cr, center, a, b):
-    cr.save()
-
+def arc_center_a_b(center, a, b):
     radius = np.linalg.norm(a - center)
-    start = heading_from(center, a)
-    end = heading_from(center, b)
+    angle1 = heading_from(center, a)
+    angle2 = heading_from(center, b)
+    return Arc(center, radius, angle1, angle2)
 
-    ribbon_width = 0.8
 
-    cr.set_source_rgb(0, 0, 0)
-    cr.set_line_width(0.05)
+def ribbon_arcs(arc, width=0.8):
+    return (
+        Arc(arc.center, arc.radius + width/2, arc.angle1, arc.angle2),
+        Arc(arc.center, arc.radius - width/2, arc.angle1, arc.angle2),
+    )
 
-    cr.arc(*center, radius + ribbon_width/2, start, end)
-    cr.stroke()
-    cr.arc(*center, radius - ribbon_width/2, start, end)
-    cr.stroke()
-
-    cr.restore()
 
 def heading_from(a, b):
     x, y = (b - a)
@@ -153,9 +164,77 @@ def intersect_lines(a, b, c, d, segment=False):
     return a + s*u
 
 
+def intersect_circles(center1, radius1, center2, radius2):
+    radius1 = abs(radius1)
+    radius2 = abs(radius2)
+
+    if radius2 > radius1:
+        return intersect_circles(center2, radius2, center1, radius1)
+
+    transverse = vec.vfrom(center1, center2)
+    dist = vec.mag(transverse)
+
+    # Check for identical or concentric circles. These will have either
+    # no points in common or all points in common, and in either case, we
+    # return an empty list.
+    if points_equal(center1, center2):
+        return []
+
+    # Check for exterior or interior tangent.
+    radius_sum = radius1 + radius2
+    radius_difference = abs(radius1 - radius2)
+    if (
+        float_equal(dist, radius_sum) or
+        float_equal(dist, radius_difference)
+    ):
+        return [
+            vec.add(
+                center1,
+                vec.norm(transverse, radius1)
+            ),
+        ]
+
+    # Check for non intersecting circles.
+    if dist > radius_sum or dist < radius_difference:
+        return []
+
+    # If we've reached this point, we know that the two circles intersect
+    # in two distinct points.
+    # Reference:
+    # http://mathworld.wolfram.com/Circle-CircleIntersection.html
+
+    # Pretend that the circles are arranged along the x-axis.
+    # Find the x-value of the intersection points, which is the same for both
+    # points. Then find the chord length "a" between the two intersection
+    # points, and use vector math to find the points.
+    dist2 = vec.mag2(transverse)
+    x = (dist2 - radius2**2 + radius1**2) / (2 * dist)
+    a = (
+        (1 / dist) *
+        sqrt(
+            (-dist + radius1 - radius2) *
+            (-dist - radius1 + radius2) *
+            (-dist + radius1 + radius2) *
+            (dist + radius1 + radius2)
+        )
+    )
+    chord_middle = vec.add(
+        center1,
+        vec.norm(transverse, x),
+    )
+    perp = vec.perp(transverse)
+    return [
+        vec.add(chord_middle, vec.norm(perp, a / 2)),
+        vec.add(chord_middle, vec.norm(perp, -a / 2)),
+    ]
+
+
+def sympy_polar_to_rect(p):
+    """Convert points from symbolic polar to numeric rectangular coordinates."""
+    r, theta = p
+    rect = mpmath.rect(float(r), float(theta))
+    return np.array([float(rect.real), float(rect.imag)])
+
+
 if __name__ == '__main__':
-    width, height = (500, 500)
-    surface = cairo.SVGSurface('output.svg', width, height)
-    cr = cairo.Context(surface)
-    draw(cr, width, height)
-    surface.finish()
+    main()
