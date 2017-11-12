@@ -27,8 +27,6 @@ def arc_center_a_b(center, a, b):
     radius = mag(a - center)
     angle1 = heading(a - center)
     angle2 = heading(b - center)
-    if angle2 < angle1:
-        angle2 += tau
     return Arc(center, radius, angle1, angle2)
 
 
@@ -171,3 +169,14 @@ def is_angle_between(theta, lo, hi):
         return False  # Endpoints are not included.
     else:
         return (theta - lo) % tau < (hi - lo) % tau
+
+
+def trim_arc(arc, points):
+    assert len(points) == 2
+    angles = [ heading(p - arc.center) for p in points ]
+    if not (
+            is_angle_between(angles[0], arc.angle1, angles[1]) and
+            is_angle_between(angles[1], angles[0], arc.angle2)
+    ):
+        angles = [angles[1], angles[0]]
+    return Arc(arc.center, arc.radius, *angles)

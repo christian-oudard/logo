@@ -1,6 +1,8 @@
 # TODO
 # - show overlap by removing arc segments
 
+from collections import defaultdict
+
 import numpy as np
 import mpmath
 import cairo
@@ -11,6 +13,7 @@ from geometry import (
     arc_center_a_b,
     intersect_lines,
     intersect_arcs,
+    trim_arc,
     midpoint,
     perp,
     tau,
@@ -20,6 +23,7 @@ from geometry import (
 def main():
     crossovers = np.array([ sympy_polar_to_rect(p) for p in calculate_crossovers() ])
     arcs = logo_arcs(crossovers)
+    arcs = trim_arcs(arcs)
 
     # Create cairo SVG surface.
     width, height = (640, 640)
@@ -41,6 +45,7 @@ def main():
     # Draw arcs.
     cr.set_source_rgb(0, 0, 0)
     cr.set_line_width(0.05)
+    cr.set_line_cap(cairo.LineCap.ROUND)
     for arc in arcs:
         cr.arc(
             *arc.center,
@@ -69,6 +74,25 @@ def dot(cr, p):
     cr.arc(*p, 0.05, 0, tau)
     cr.fill()
     cr.restore()
+
+
+def trim_arcs(arcs):
+    arc_ids = list(range(len(arcs)))
+    arcs_by_id = dict(enumerate(arcs))
+    intersections_by_arc = defaultdict(list)
+
+    for (a, b) in every_pair(arc_ids):
+        arc_a = arcs_by_id[a]
+        arc_b = arcs_by_id[b]
+        points = intersect_arcs(arc_a, arc_b)
+        intersections_by_arc[a].extend(points)
+        intersections_by_arc[b].extend(points)
+
+    result_arcs = []
+    for arc_id, points in intersections_by_arc.items():
+        result_arcs.append(trim_arc(arcs_by_id[arc_id], points))
+
+    return result_arcs
 
 
 def logo_arcs(crossovers):
