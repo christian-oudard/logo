@@ -13,7 +13,7 @@ from geometry import (
     arc_center_a_b,
     intersect_lines,
     intersect_arcs,
-    trim_arc,
+    break_arc,
     midpoint,
     perp,
     tau,
@@ -23,7 +23,15 @@ from geometry import (
 def main():
     crossovers = np.array([ sympy_polar_to_rect(p) for p in calculate_crossovers() ])
     arcs = logo_arcs(crossovers)
-    arcs = trim_arcs(arcs)
+    arcs = ribbonize(arcs)
+    arcs = break_arcs(arcs)
+
+    # Remove every other crossing.
+    # FIXME Arc ordering is weird.
+    arcs = [
+        a for (i, a) in enumerate(arcs)
+        if i % 24 in [1, 2, 4, 5, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22]
+    ]
 
     # Create cairo SVG surface.
     width, height = (640, 640)
@@ -44,9 +52,9 @@ def main():
 
     # Draw arcs.
     cr.set_source_rgb(0, 0, 0)
-    cr.set_line_width(0.05)
+    cr.set_line_width(0.15)
     cr.set_line_cap(cairo.LineCap.ROUND)
-    for arc in arcs:
+    for i, arc in enumerate(arcs):
         cr.arc(
             *arc.center,
             arc.radius,
@@ -76,7 +84,14 @@ def dot(cr, p):
     cr.restore()
 
 
-def trim_arcs(arcs):
+def ribbonize(arcs):
+    result = []
+    for arc in arcs:
+        result.extend(ribbon_arcs(arc))
+    return result
+
+
+def break_arcs(arcs):
     arc_ids = list(range(len(arcs)))
     arcs_by_id = dict(enumerate(arcs))
     intersections_by_arc = defaultdict(list)
@@ -90,29 +105,30 @@ def trim_arcs(arcs):
 
     result_arcs = []
     for arc_id, points in intersections_by_arc.items():
-        result_arcs.append(trim_arc(arcs_by_id[arc_id], points))
+        result_arcs.extend(break_arc(arcs_by_id[arc_id], points))
 
     return result_arcs
 
 
 def logo_arcs(crossovers):
-    arcs = []
+    n = len(crossovers)
 
-    # Draw outer arcs.
-    for i in range(0, 14, 2):
+    # Outer arcs.
+    outer_arcs = []
+    for i in range(0, n, 2):
         inner = crossovers[i]
-        outer1 = crossovers[(i-1) % 14]
-        outer2 = crossovers[(i+1) % 14]
-        arcs.extend(
-            ribbon_arcs(
-                arc_center_a_b(inner, outer1, outer2)))
+        outer1 = crossovers[(i-1) % n]
+        outer2 = crossovers[(i+1) % n]
+        outer_arcs.append(arc_center_a_b(inner, outer1, outer2))
 
-    # Draw middle arcs.
-    middleCenters = {}
-    for i in range(0, 14, 2):
-        outer = crossovers[(i+1) % 14]
+    # Middle arcs.
+    middle_left_arcs = []
+    middle_right_arcs = []
+    middle_centers = {}
+    for i in range(0, n, 2):
+        outer = crossovers[(i+1) % n]
         inner1 = crossovers[i]
-        inner2 = crossovers[(i+2) % 14]
+        inner2 = crossovers[(i+2) % n]
 
         mid1 = midpoint(inner1, outer)
         tangent1 = perp(outer - inner1)
@@ -120,9 +136,7 @@ def logo_arcs(crossovers):
             outer, inner2,
             mid1, mid1 + tangent1,
         )
-        arcs.extend(
-            ribbon_arcs(
-                arc_center_a_b(center1, inner1, outer)))
+        middle_left_arcs.append(arc_center_a_b(center1, inner1, outer))
 
         mid2 = midpoint(inner2, outer)
         tangent2 = perp(outer - inner2)
@@ -130,33 +144,40 @@ def logo_arcs(crossovers):
             outer, inner1,
             mid2, mid2 - tangent2,
         )
-        arcs.extend(
-            ribbon_arcs(
-                arc_center_a_b(center2, outer, inner2)))
+        middle_right_arcs.append(arc_center_a_b(center2, outer, inner2))
 
-        middleCenters[i] = center1
-        middleCenters[i + 1] = center2
+        middle_centers[i] = center1
+        middle_centers[i + 1] = center2
 
-    # Draw inner arcs.
-    for i in range(1, 14, 2):
-        inner1 = crossovers[(i-1) % 14]
-        inner2 = crossovers[(i+1) % 14]
+    # Inner arcs.
+    inner_arcs = []
+    for i in range(1, n, 2):
+        inner1 = crossovers[(i-1) % n]
+        inner2 = crossovers[(i+1) % n]
 
         # Get the middle arc circle centers which are perpendicular to the ends of the
         # inner arc, so the arcs will be cotangent.
-        middleCenter1 = middleCenters[(i-2) % 14]
-        middleCenter2 = middleCenters[(i+1) % 14]
+        middleCenter1 = middle_centers[(i-2) % n]
+        middleCenter2 = middle_centers[(i+1) % n]
 
         # These lines intersect at the inner arc center.
         center = intersect_lines(middleCenter1, inner1, middleCenter2, inner2)
-        arcs.extend(
-            ribbon_arcs(
-                arc_center_a_b(center, inner2, inner1)))
+        inner_arcs.append(arc_center_a_b(center, inner2, inner1))
+
+    # Assemble arcs.
+    m = n // 2
+    arcs = []
+    for i in range(m):
+        j = i * 3 % m
+        arcs.append(outer_arcs[j])
+        arcs.append(middle_right_arcs[j])
+        arcs.append(inner_arcs[(j+1) % m])
+        arcs.append(middle_left_arcs[(j+2) % m])
 
     return arcs
 
 
-def ribbon_arcs(arc, width=0.8):
+def ribbon_arcs(arc, width=1.15):
     return (
         Arc(arc.center, arc.radius + width/2, arc.angle1, arc.angle2),
         Arc(arc.center, arc.radius - width/2, arc.angle1, arc.angle2),

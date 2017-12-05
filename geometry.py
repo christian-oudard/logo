@@ -171,12 +171,19 @@ def is_angle_between(theta, lo, hi):
         return (theta - lo) % tau < (hi - lo) % tau
 
 
-def trim_arc(arc, points):
+def break_arc(arc, points):
     assert len(points) == 2
-    angles = [ heading(p - arc.center) for p in points ]
+    breaks = [ heading(p - arc.center) for p in points ]
+
+    # Sort breaks along the segment.
     if not (
-            is_angle_between(angles[0], arc.angle1, angles[1]) and
-            is_angle_between(angles[1], angles[0], arc.angle2)
+            is_angle_between(breaks[0], arc.angle1, breaks[1]) and
+            is_angle_between(breaks[1], breaks[0], arc.angle2)
     ):
-        angles = [angles[1], angles[0]]
-    return Arc(arc.center, arc.radius, *angles)
+        breaks = [breaks[1], breaks[0]]
+
+    return (
+        Arc(arc.center, arc.radius, arc.angle1, breaks[0]),
+        Arc(arc.center, arc.radius, breaks[0], breaks[1]),
+        Arc(arc.center, arc.radius, breaks[1], arc.angle2),
+    )
