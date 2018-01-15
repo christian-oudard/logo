@@ -1,0 +1,2 @@
+Foreground: #007785
+Background: #dbd2bb
