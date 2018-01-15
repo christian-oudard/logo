@@ -1,5 +1,6 @@
 # TODO
-# - show overlap by removing arc segments
+# - arcs as start, end, radius
+# - fill segment body
 
 from collections import defaultdict
 
@@ -20,6 +21,10 @@ from geometry import (
 )
 
 
+LINE_WIDTH = 0.2
+RIBBON_WIDTH = 0.7 + LINE_WIDTH
+
+
 def main():
     crossovers = np.array([ sympy_polar_to_rect(p) for p in calculate_crossovers() ])
     arcs = logo_arcs(crossovers)
@@ -34,7 +39,7 @@ def main():
     ]
 
     # Create cairo SVG surface.
-    width, height = (640, 640)
+    width, height = (1024, 1024)
     surface = cairo.SVGSurface('output.svg', width, height)
     cr = cairo.Context(surface)
 
@@ -52,7 +57,7 @@ def main():
 
     # Draw arcs.
     cr.set_source_rgb(0, 0, 0)
-    cr.set_line_width(0.15)
+    cr.set_line_width(LINE_WIDTH)
     cr.set_line_cap(cairo.LineCap.ROUND)
     for i, arc in enumerate(arcs):
         cr.arc(
@@ -64,10 +69,10 @@ def main():
         cr.stroke()
 
     # Draw arc intersections.
-    for (a, b) in every_pair(arcs):
-        intersections = intersect_arcs(a, b)
-        for p in intersections:
-            dot(cr, p)
+    # for (a, b) in every_pair(arcs):
+    #     intersections = intersect_arcs(a, b)
+    #     for p in intersections:
+    #         dot(cr, p)
 
     # Draw crossover points.
     # for p in crossovers:
@@ -177,7 +182,7 @@ def logo_arcs(crossovers):
     return arcs
 
 
-def ribbon_arcs(arc, width=1.15):
+def ribbon_arcs(arc, width=RIBBON_WIDTH):
     return (
         Arc(arc.center, arc.radius + width/2, arc.angle1, arc.angle2),
         Arc(arc.center, arc.radius - width/2, arc.angle1, arc.angle2),
@@ -202,3 +207,4 @@ def every_pair(iterable):
 
 if __name__ == '__main__':
     main()
+
