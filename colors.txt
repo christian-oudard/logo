@@ -1,6 +1,5 @@
-CMYK:
-    Coated GRACol 2006
-    C100M3Y28K21
+main color
+currently RGB #00829b == PMS 314
 
-RGB:
-    #008297
+off-white border
+currently RGB #f0f7f7
