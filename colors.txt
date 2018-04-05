@@ -1,5 +1,5 @@
 main color
-currently RGB #00829b == PMS 314
+PMS 3272  #00A0A0
 
 off-white border
-currently RGB #f0f7f7
+#FFFFE0
