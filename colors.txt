@@ -1,5 +1,8 @@
-main color
-PMS 3272  #00A0A0
+Print:
+blue-green, Pantone 3135 U
+cream colored paper
 
-off-white border
-#FFFFE0
+Screen:
+blue-green, #00ABBA
+cream, #FDFFEA
+dark, #0B0007
