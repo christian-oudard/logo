@@ -3,6 +3,6 @@ blue-green, Pantone 3135 U
 cream colored paper
 
 Screen:
-blue-green, #00ABBA
-cream, #FDFFEA
+blue-green, #028296
+cream, #E7E7D1
 dark, #0B0007
