@@ -5,7 +5,11 @@ from sympy import (
     tan,
     solve,
     Rational,
+    diff,
+    pi,
 )
+
+tau = 2*pi
 
 theta, a, w, x0, y0, ratio, thickness = symbols('theta a w x0 y0 ratio thickness')
 
@@ -40,7 +44,7 @@ def shape(x):
 
 # Draw the circular braid with a shaped radial sine wave.
 def braid(theta):
-    # theta from 0 to 3*tau (6*pi)
+    # theta from 0 to 3*tau
     return 1 + thickness * shape(cos(ratio * theta))
 
 
@@ -50,3 +54,14 @@ braid_equation = braid(theta).subs({
     x0: Rational(1, 7),
     w: Rational(6, 7),
 })
+
+# Derivatives.
+braid_equation_d1 = diff(braid_equation, theta)
+braid_equation_d2 = diff(braid_equation_d1, theta)
+
+# Intersections.
+step = Rational(1/14) * tau
+intersection_angles = [ i*step for i in range(3*14) if i % 3 == 1 ]
+intersection_radiuses = [ braid_equation.subs(theta, t) for t in intersection_angles ]
+intersections = list(zip(intersection_angles, intersection_radiuses))
+assert len(intersections) == 14
