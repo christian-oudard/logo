@@ -1,19 +1,25 @@
+import numpy as np
+from scipy.optimize import fsolve
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+
+import vec
+
 from braid_equation import (
-    theta,
-    braid_equation,
-    braid_equation_d1,
-    braid_equation_d2,
+    braid,
+    braid_d1,
+    braid_d2,
     intersections,
+    curvature,
 )
 
-import numpy as np
-import matplotlib.pyplot as plt
+tau = np.pi * 2
+
+theta_vals = np.linspace(0, 3*tau, 3*7*32, endpoint=False)
 
 
-theta_vals = np.linspace(0, 12*np.pi, 3*7*64, endpoint=False)
-
-def discretize(equation, var, domain):
-    values = [equation.subs({var: x}).evalf() for x in domain]
+def discretize(func, domain):
+    values = [ func(x) for x in domain ]
     return list(zip(domain, values))
 
 
@@ -23,17 +29,56 @@ def polar_to_cartesian(t, r):
     return r * np.cos(t), r * np.sin(t)
 
 
-def discretize_polar(equation, theta_vals):
-    polar_vals = discretize(equation, theta, theta_vals)
-    cartesian_vals = [polar_to_cartesian(t, r) for t, r in polar_vals]
+def discretize_polar(func, theta_vals):
+    polar_vals = discretize(func, theta_vals)
+    cartesian_vals = [ polar_to_cartesian(t, r) for t, r in polar_vals ]
     cartesian_vals.append(cartesian_vals[0])  # Close the loop.
     return cartesian_vals
 
 
-braid_points = discretize_polar(braid_equation, theta_vals)
-intersection_points = [ polar_to_cartesian(t.evalf(), r.evalf()) for (t, r) in intersections ]
+def polar_tangent(t, r, dr_dt):
+    dx_dt = dr_dt * np.cos(t) - r * np.sin(t)
+    dy_dt = dr_dt * np.sin(t) + r * np.cos(t)
+    return dx_dt, dy_dt
 
-plt.plot(*zip(*braid_points), label='braid')
-plt.plot(*zip(*intersection_points), 'ro', label='intersection points')
-plt.axis('equal')
+
+def osculating_circle(t):
+    r = braid(t)
+    p = polar_to_cartesian(t, r)
+    curv = curvature(t)
+    radius = 1 / curv
+    tangent = polar_tangent(t, braid(t), braid_d1(t))
+    normal = vec.norm(vec.perp(tangent))
+    center = vec.add(p, vec.mul(normal, radius))
+    return p, center, radius
+
+
+braid_points = discretize_polar(braid, theta_vals)
+intersection_points = list(vec.unique( polar_to_cartesian(t, r) for (t, r) in intersections ))
+assert len(intersection_points) == 14
+
+fig, ax = plt.subplots()
+ax.set_aspect('equal')
+size = 3
+plt.xlim(-size, size)
+plt.ylim(-size, size)
+
+ax.add_patch(Circle((0, 0), radius=1, edgecolor='gray', facecolor='none'))
+
+plt.plot(*zip(*intersection_points), 'ro')
+
+
+step = (3/14) * tau
+for t in [ i*step for i in range(3*14) ]:
+    p, center, radius = osculating_circle(t)
+    plt.plot(*p, 'go', markersize=2)
+    plt.plot(*center, 'go', markersize=2)
+    ax.add_patch(Circle(center, radius=radius, edgecolor='green', facecolor='none', linewidth=0.5))
+
+plt.plot(*zip(*braid_points))
+
 plt.show()
+
+
+
+

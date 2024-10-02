@@ -7,6 +7,7 @@ from sympy import (
     Rational,
     diff,
     pi,
+    lambdify,
 )
 
 tau = 2*pi
@@ -43,12 +44,9 @@ def shape(x):
 
 
 # Draw the circular braid with a shaped radial sine wave.
-def braid(theta):
-    # theta from 0 to 3*tau
-    return 1 + thickness * shape(cos(ratio * theta))
-
-
-braid_equation = braid(theta).subs({
+# Theta goes from from 0 to 3*tau
+braid_general = 1 + thickness * shape(cos(ratio * theta))
+braid_equation = braid_general.subs({
     ratio: Rational(7, 3),
     thickness: Rational(1, 3),
     x0: Rational(1, 7),
@@ -59,9 +57,20 @@ braid_equation = braid(theta).subs({
 braid_equation_d1 = diff(braid_equation, theta)
 braid_equation_d2 = diff(braid_equation_d1, theta)
 
+# Curvature.
+r = braid_equation
+r1 = braid_equation_d1
+r2 = braid_equation_d2
+curvature_equation = (r**2 + 2*r1**2 - r*r2) / (r**2 + r1**2) ** (3/2)
+
 # Intersections.
-step = Rational(1/14) * tau
-intersection_angles = [ i*step for i in range(3*14) if i % 3 == 1 ]
-intersection_radiuses = [ braid_equation.subs(theta, t) for t in intersection_angles ]
+step = (Rational(1/14) * tau).evalf()
+intersection_angles = [ i*step for i in range(3*14) if i % 3 != 0 ]
+intersection_radiuses = [ braid_equation.subs(theta, t).evalf() for t in intersection_angles ]
 intersections = list(zip(intersection_angles, intersection_radiuses))
-assert len(intersections) == 14
+assert len(intersections) == 28
+
+braid = lambdify(theta, braid_equation)
+braid_d1 = lambdify(theta, braid_equation_d1)
+braid_d2 = lambdify(theta, braid_equation_d2)
+curvature = lambdify(theta, curvature_equation)
