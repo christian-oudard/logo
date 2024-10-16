@@ -1,5 +1,8 @@
 import numpy as np
 from scipy.optimize import fsolve
+
+import matplotlib
+matplotlib.use('GTK3Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
@@ -59,26 +62,18 @@ assert len(intersection_points) == 14
 
 fig, ax = plt.subplots()
 ax.set_aspect('equal')
-size = 3
+size = 2
 plt.xlim(-size, size)
 plt.ylim(-size, size)
 
-ax.add_patch(Circle((0, 0), radius=1, edgecolor='gray', facecolor='none'))
-
 plt.plot(*zip(*intersection_points), 'ro')
-
 
 step = (3/14) * tau
 for t in [ i*step for i in range(3*14) ]:
     p, center, radius = osculating_circle(t)
     plt.plot(*p, 'go', markersize=2)
-    plt.plot(*center, 'go', markersize=2)
     ax.add_patch(Circle(center, radius=radius, edgecolor='green', facecolor='none', linewidth=0.5))
 
 plt.plot(*zip(*braid_points))
 
 plt.show()
-
-
-
-
