@@ -2,7 +2,6 @@ import numpy as np
 from scipy.optimize import fsolve
 
 import matplotlib
-matplotlib.use('GTK3Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
