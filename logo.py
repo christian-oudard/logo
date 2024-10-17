@@ -1,208 +1,166 @@
-# TODO
-# - arcs as start, end, radius
-# - fill segment body
-
-from collections import defaultdict
+from math import sin
+import vec
 
 import numpy as np
-import mpmath
 import cairo
 
-from crossovers import calculate_crossovers
-from geometry import (
-    Arc,
-    arc_center_a_b,
-    intersect_lines,
-    intersect_arcs,
-    break_arc,
-    midpoint,
-    perp,
-    tau,
-)
+from braid_equation import braid
+from grid_index import GridIndex
+from utility import discretize_polar
 
 
-LINE_WIDTH = 0.2
-RIBBON_WIDTH = 0.7 + LINE_WIDTH
+tau = np.pi * 2
+
+LINE_WIDTH = 0.1
+RIBBON_WIDTH = 0.37
+
+GRID_SIZE = 0.1
+
 
 
 def main():
-    crossovers = np.array([ sympy_polar_to_rect(p) for p in calculate_crossovers() ])
-    arcs = logo_arcs(crossovers)
-    arcs = ribbonize(arcs)
-    arcs = break_arcs(arcs)
+    theta_vals = np.linspace(0, 3*tau, 3*7*64, endpoint=False)
+    braid_points = discretize_polar(braid, theta_vals)
 
-    # Remove every other crossing.
-    # FIXME Arc ordering is weird.
-    arcs = [
-        a for (i, a) in enumerate(arcs)
-        if i % 24 in [1, 2, 4, 5, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22]
-    ]
+    curves = ribbonize(braid_points, RIBBON_WIDTH)
+    curve_sections = break_curves(curves)
 
     # Create cairo SVG surface.
-    width, height = (1024, 1024)
+    width, height = (768, 768)
     surface = cairo.SVGSurface('output.svg', width, height)
     cr = cairo.Context(surface)
 
-    # Set a view box ranging from -4 to +4 in both axes.
+    # Set a view box ranging from -2 to +2 in both axes.
     cr.translate(width/2, height/2)
-    cr.scale(width/8, height/8)
+    cr.scale(width/4, height/4)
     cr.rotate(-tau/4)
 
-    # Draw construction lines.
-    # cr.set_source_rgb(0.9, 0.9, 0.9)
-    # cr.set_line_width(0.008)
-    # for arc in arcs:
-    #     cr.arc(*arc.center, arc.radius, 0, tau)
-    #     cr.stroke()
-
-    # Draw arcs.
+    # Draw braid lines.
     cr.set_source_rgb(0, 0, 0)
     cr.set_line_width(LINE_WIDTH)
     cr.set_line_cap(cairo.LineCap.ROUND)
-    for i, arc in enumerate(arcs):
-        cr.arc(
-            *arc.center,
-            arc.radius,
-            arc.angle1,
-            arc.angle2,
-        )
-        cr.stroke()
-
-    # Draw arc intersections.
-    # for (a, b) in every_pair(arcs):
-    #     intersections = intersect_arcs(a, b)
-    #     for p in intersections:
-    #         dot(cr, p)
-
-    # Draw crossover points.
-    # for p in crossovers:
-    #     dot(cr, p)
+    for i, c in enumerate(curve_sections):
+        if i % 4 != 3:
+            draw_curve(cr, c)
 
     surface.finish()
 
 
+def draw_curve(cr, points, closed=False):
+    start = points[0]
+    cr.move_to(*start)
+    for p in points[1:]:
+        cr.line_to(*p)
+    if closed:
+        cr.line_to(*start)
+    cr.stroke()
+
+
 def dot(cr, p):
     cr.save()
-    cr.set_source_rgb(0.85, 0.0, 0.0)
-    cr.arc(*p, 0.05, 0, tau)
+    cr.set_source_rgb(0.8, 0.0, 0.0)
+    cr.arc(*p, 0.005, 0, tau)
     cr.fill()
     cr.restore()
 
 
-def ribbonize(arcs):
-    result = []
-    for arc in arcs:
-        result.extend(ribbon_arcs(arc))
-    return result
+def ribbonize(curve, width):
+    # Offset the curve an equal distance to the left and right. At each point, we look at the previous and next segment,
+    # offset each segment to each side, then find the intersection of these lines. When the angle between segments is
+    # zero or small, this becomes numerically unstable, so instead we use an angle bisection method.
 
+    offset = width / 2
+    curve_left = []
+    curve_right = []
+    for p_prev, p, p_next in iter_segments(curve):
+        v_prev = vec.vfrom(p_prev, p)
+        v_next = vec.vfrom(p, p_next)
 
-def break_arcs(arcs):
-    arc_ids = list(range(len(arcs)))
-    arcs_by_id = dict(enumerate(arcs))
-    intersections_by_arc = defaultdict(list)
+        # For each segment, get a vector perpendicular to the segment, then add them. This is an angle bisector for the
+        # angle of the joint.
+        w_prev = vec.norm(vec.perp(v_prev), offset)
+        w_next = vec.norm(vec.perp(v_next), offset)
+        bisector = vec.add(w_prev, w_next)
 
-    for (a, b) in every_pair(arc_ids):
-        arc_a = arcs_by_id[a]
-        arc_b = arcs_by_id[b]
-        points = intersect_arcs(arc_a, arc_b)
-        intersections_by_arc[a].extend(points)
-        intersections_by_arc[b].extend(points)
-
-    result_arcs = []
-    for arc_id, points in intersections_by_arc.items():
-        result_arcs.extend(break_arc(arcs_by_id[arc_id], points))
-
-    return result_arcs
-
-
-def logo_arcs(crossovers):
-    n = len(crossovers)
-
-    # Outer arcs.
-    outer_arcs = []
-    for i in range(0, n, 2):
-        inner = crossovers[i]
-        outer1 = crossovers[(i-1) % n]
-        outer2 = crossovers[(i+1) % n]
-        outer_arcs.append(arc_center_a_b(inner, outer1, outer2))
-
-    # Middle arcs.
-    middle_left_arcs = []
-    middle_right_arcs = []
-    middle_centers = {}
-    for i in range(0, n, 2):
-        outer = crossovers[(i+1) % n]
-        inner1 = crossovers[i]
-        inner2 = crossovers[(i+2) % n]
-
-        mid1 = midpoint(inner1, outer)
-        tangent1 = perp(outer - inner1)
-        center1 = intersect_lines(
-            outer, inner2,
-            mid1, mid1 + tangent1,
+        # Make the bisector have the correct length.
+        half_angle = vec.angle(v_next, bisector)
+        bisector = vec.norm(
+            bisector,
+            offset / sin(half_angle)
         )
-        middle_left_arcs.append(arc_center_a_b(center1, inner1, outer))
 
-        mid2 = midpoint(inner2, outer)
-        tangent2 = perp(outer - inner2)
-        center2 = intersect_lines(
-            outer, inner1,
-            mid2, mid2 - tangent2,
-        )
-        middle_right_arcs.append(arc_center_a_b(center2, outer, inner2))
+        # Determine the left and right joint spots.
+        p_left = vec.add(p, bisector)
+        curve_left.append(p_left)
+        p_right = vec.sub(p, bisector)
+        curve_right.append(p_right)
 
-        middle_centers[i] = center1
-        middle_centers[i + 1] = center2
-
-    # Inner arcs.
-    inner_arcs = []
-    for i in range(1, n, 2):
-        inner1 = crossovers[(i-1) % n]
-        inner2 = crossovers[(i+1) % n]
-
-        # Get the middle arc circle centers which are perpendicular to the ends of the
-        # inner arc, so the arcs will be cotangent.
-        middleCenter1 = middle_centers[(i-2) % n]
-        middleCenter2 = middle_centers[(i+1) % n]
-
-        # These lines intersect at the inner arc center.
-        center = intersect_lines(middleCenter1, inner1, middleCenter2, inner2)
-        inner_arcs.append(arc_center_a_b(center, inner2, inner1))
-
-    # Assemble arcs.
-    m = n // 2
-    arcs = []
-    for i in range(m):
-        j = i * 3 % m
-        arcs.append(outer_arcs[j])
-        arcs.append(middle_right_arcs[j])
-        arcs.append(inner_arcs[(j+1) % m])
-        arcs.append(middle_left_arcs[(j+2) % m])
-
-    return arcs
+    return curve_left, curve_right
 
 
-def ribbon_arcs(arc, width=RIBBON_WIDTH):
-    return (
-        Arc(arc.center, arc.radius + width/2, arc.angle1, arc.angle2),
-        Arc(arc.center, arc.radius - width/2, arc.angle1, arc.angle2),
-    )
+def break_curves(curves):
+    # Collect every line segment in the curves.
+    segments = []
+    for c in curves:
+        for _, p, p_next in iter_segments(c):
+            segments.append((p, p_next))
+
+    # Put the line segments into a grid index.
+    grid = GridIndex(GRID_SIZE)
+    for segment in segments:
+        grid.add(segment)
+
+    # Separate the curves at the points where they intersect.
+    all_sections = []
+    for c in curves:
+        curve_segments = []
+        for _, p, p_next in iter_segments(c):
+            curve_segments.append((p, p_next))
+
+        sections = []
+        current_section = []
+        for segment in curve_segments:
+            for other in grid.query(segment):
+                x = vec.intersect_lines(segment, other, segment=True, include_endpoints = False)
+                if x is not None:
+                    # Split the current segment.
+                    split_before = (segment[0], x)
+                    split_after = (x, segment[1])
+                    # End the current section and start the new one.
+                    current_section.append(split_before)
+                    sections.append(current_section)
+                    current_section = [split_after]
+                    break
+            else:  # No intersection found for this segment.
+                current_section.append(segment)
+
+        # Because the starting point is not a section break, we have to join the remainder to the start.
+        # We've reached the end of the curve, so this is a section boundary too.
+        sections[0] = current_section + sections[0]
+        all_sections.extend(sections)
+
+    new_curves = [ join_segments(s) for s in all_sections ]
+    return new_curves
 
 
-def sympy_polar_to_rect(p):
-    """Convert points from symbolic polar to numeric rectangular coordinates."""
-    r, theta = p
-    rect = mpmath.rect(float(r), float(theta))
-    return np.array([float(rect.real), float(rect.imag)])
+def iter_segments(curve):
+    num_points = len(curve)
+    for i, p in enumerate(curve):
+        p_prev = curve[ (i-1) % num_points ]
+        p_next = curve[ (i+1) % num_points ]
+        yield p_prev, p, p_next
 
 
-def every_pair(iterable):
-    enumerated_values = list(enumerate(iterable))
-    for low_index, first_item in enumerated_values:
-        for high_index, second_item in enumerated_values:
-            if high_index <= low_index:
-                continue
-            yield (first_item, second_item)
+def join_segments(segments):
+    curve = []
+    for (a, b) in segments:
+        if len(curve) == 0:
+            curve.append(a)
+            curve.append(b)
+        else:
+            assert vec.equal(curve[-1], a), f'{vec.dist(curve[-1], a)}'
+            curve.append(b)
+    return curve
 
 
 if __name__ == '__main__':

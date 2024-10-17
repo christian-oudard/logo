@@ -5,6 +5,13 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
+from utility import (
+    discretize,
+    polar_to_cartesian,
+    discretize_polar,
+)
+
+
 import vec
 
 from braid_equation import (
@@ -18,24 +25,6 @@ from braid_equation import (
 tau = np.pi * 2
 
 theta_vals = np.linspace(0, 3*tau, 3*7*32, endpoint=False)
-
-
-def discretize(func, domain):
-    values = [ func(x) for x in domain ]
-    return list(zip(domain, values))
-
-
-def polar_to_cartesian(t, r):
-    r = float(r)
-    t = float(t)
-    return r * np.cos(t), r * np.sin(t)
-
-
-def discretize_polar(func, theta_vals):
-    polar_vals = discretize(func, theta_vals)
-    cartesian_vals = [ polar_to_cartesian(t, r) for t, r in polar_vals ]
-    cartesian_vals.append(cartesian_vals[0])  # Close the loop.
-    return cartesian_vals
 
 
 def polar_tangent(t, r, dr_dt):
@@ -56,6 +45,7 @@ def osculating_circle(t):
 
 
 braid_points = discretize_polar(braid, theta_vals)
+braid_points.append(braid_points[0])  # Close the loop.
 intersection_points = list(vec.unique( polar_to_cartesian(t, r) for (t, r) in intersections ))
 assert len(intersection_points) == 14
 
