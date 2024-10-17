@@ -11,11 +11,10 @@ from utility import discretize_polar
 
 tau = np.pi * 2
 
-LINE_WIDTH = 0.1
-RIBBON_WIDTH = 0.37
+LINE_WIDTH = 0.08
+RIBBON_WIDTH = 0.3 + LINE_WIDTH / 2
 
 GRID_SIZE = 0.1
-
 
 
 def main():
@@ -30,13 +29,16 @@ def main():
     surface = cairo.SVGSurface('output.svg', width, height)
     cr = cairo.Context(surface)
 
+    cr.set_source_rgb(0, 0, 0)
+    cr.paint()
+
     # Set a view box ranging from -2 to +2 in both axes.
     cr.translate(width/2, height/2)
     cr.scale(width/4, height/4)
     cr.rotate(-tau/4)
 
     # Draw braid lines.
-    cr.set_source_rgb(0, 0, 0)
+    cr.set_source_rgb(1, 1, 1)
     cr.set_line_width(LINE_WIDTH)
     cr.set_line_cap(cairo.LineCap.ROUND)
     for i, c in enumerate(curve_sections):
